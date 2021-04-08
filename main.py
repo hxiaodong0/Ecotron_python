@@ -20,10 +20,31 @@ import urllib.request
 
 translator = google_translator()
 translate_text = translator.translate('สวัสดีจีน',lang_tgt='en')
-print(translate_text)
 # translator.detect('hello')[0] == 'en'
 
+def tag_visible(element):
+    if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:
+        return False
+    if isinstance(element, Comment):
+        return False
+    return True
 
+def text_from_html(body):
+    soup = BeautifulSoup(body, 'html.parser')
+    texts = soup.findAll(text=True)
+    visible_texts = filter(tag_visible, texts)
+    return u" ".join(t.strip() for t in visible_texts)
+
+def compare_weights(weights_relavo, weights):
+    """
+    This function returns the weights relative to the Relavo patent
+    :rtype: dictionary
+    """
+    n = 0
+    for key,val in weights.items():
+        if key in weights_relavo:
+            n += round(val * weights_relavo[key], 2)
+    return n
 
 def get_weights(key_words ):
     gen_docs = [[w.lower() for w in word_tokenize(text)]
@@ -63,12 +84,12 @@ def get_weights(key_words ):
     return dic
 
 
-print("hello world")
 file = pd.ExcelFile('Em.xlsx');
 print("Loading file successful, the sheets names are: ", file.sheet_names)
 df = file.parse("Sheet1")
 df["person_name"] = 'nan'
 df["company_name"] = 'nan'
+df['relevance_socre'] = 'nan'
 
 res = df["company_name"]  # 'result link'
 
@@ -81,6 +102,8 @@ for i in range(res.__len__()):
 # remove duplicates
 df.drop_duplicates(subset ="company_name",
                      keep = False, inplace = True)
+df.index = range(df.__len__())
+res = df["company_name"]  # 'result link'
 len = res.__len__()
 
 key_words = ['Electric' ,'Vehicle','Plug', 'power','Emission','battery', 'Charging','vehicle', 'coach', 'jitney', 'microbus', 'minibus', 'minivan', 'omnibus', 'van'
@@ -89,47 +112,66 @@ key_words = ['Electric' ,'Vehicle','Plug', 'power','Emission','battery', 'Chargi
              'limousine', 'mini', 'minicar', 'sedan', 'subcompact','hybrid','Battery',
 'station','station','EV','Fuel' ,'Cell', 'LEVEL', 'Electric','Electric',
              'Vehicle','Vehicle','Vehicle','car','car','car','car','automobile',
-             'automobile','automobile','control','driving','drive','autonomous' ]
+             'automobile','automobile','control','driving','drive','autonomous','transport','transportation' ]
 
 key_words = [x.lower() for x in key_words]
-weights = get_weights(key_words);
+weights_keywords = get_weights(key_words);
+
+# relevance_socre
 
 
-USER_AGENT  = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36"
 # http://
 # URL = df.company_name[0]
 
-URL = "https://2ndsightbio.com/"
+print("being process")
 
-results = {}
+def req(URL):
+
+    # URL =  'https://'+df.company_name[i]
+
+    results = {}
+
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36 Edg/89.0.774.68"
+    headers = {"user-agent": USER_AGENT}
+    n = 0
+    try:
+        resp = requests.get(URL, headers=headers, verify=False)
+        if resp.status_code == 200:
+            html = urllib.request.urlopen(URL).read()
+            V_text = (text_from_html(html))
+            V_text = list(V_text.split(" "))
+            V_text = list(filter(None, V_text))
+
+            # if len(V_text) >2:
+            #     if translator.detect(V_text[0])[0] != 'en' or translator.detect(V_text[1])[0]!=  'en' :
+            #         for i in range(len(V_text)):
+            #             V_text[i] = translator.translate(V_text[i], lang_tgt='en')
 
 
-headers = {"user-agent": USER_AGENT}
-
-try:
-    resp = requests.get(URL, headers=headers)
-except:
-    print("request failed", URL)
-
-#Tokenize words and create dictionary
-
-def tag_visible(element):
-    if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:
-        return False
-    if isinstance(element, Comment):
-        return False
-    return True
+            weight = get_weights(V_text)
+            n = compare_weights(weights_keywords, weight)
+    except:
+        print("request failed", URL)
+        n = -1
 
 
-def text_from_html(body):
-    soup = BeautifulSoup(body, 'html.parser')
-    texts = soup.findAll(text=True)
-    visible_texts = filter(tag_visible, texts)
-    return u" ".join(t.strip() for t in visible_texts)
+    #Tokenize words and create dictionary
 
-html = urllib.request.urlopen('https://2ndsightbio.com/').read()
-V_text = (text_from_html(html))
-V_text = list(V_text.split(" "))
+    return n
+
+# URL = "https://ecotron.ai/"
+# # URL = 'https://' + df.company_name[i]
+# n = req(URL)
+
+df = pd.read_pickle("a_file.pkl")
+
+for i in tqdm(range(2726,len)):
+    URL = "https://ecotron.ai/"
+    URL = 'https://' + df.company_name[i]
+    n = req(URL)
+    df.at[i, "KeyWord Similarity score"] = n
+    # if i %2 == 0:
+    df.to_pickle("a_file.pkl")
 
 prep = (
 "when", "or", "further", "is", "claim", "wherein", "that", "keep", "causes", "a", "and", "are", "be", "an", "aboard",
